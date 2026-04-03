@@ -158,6 +158,32 @@
       gap: 12px;
     }
 
+    .deck-panel {
+      display: grid;
+      gap: 12px;
+    }
+
+    .deck-controls {
+      display: grid;
+      gap: 10px;
+    }
+
+    .deck-select,
+    .deck-input {
+      width: 100%;
+      min-height: 54px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid var(--border);
+      background: var(--surface-strong);
+      color: var(--text);
+    }
+
+    .deck-actions {
+      display: grid;
+      gap: 10px;
+    }
+
     .primary-button,
     .secondary-button,
     .danger-button,
@@ -319,6 +345,13 @@
       color: var(--muted);
     }
 
+    .study-score {
+      margin: 0;
+      text-align: center;
+      font-size: 0.98rem;
+      color: var(--muted);
+    }
+
     .study-stage {
       display: grid;
       grid-template-columns: 56px 1fr 56px;
@@ -376,6 +409,30 @@
       color: var(--muted);
     }
 
+    .study-feedback {
+      display: grid;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .know-button {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .know-button:hover {
+      background: var(--accent-strong);
+    }
+
+    .dont-know-button {
+      background: var(--danger);
+      color: #fff;
+    }
+
+    .dont-know-button:hover {
+      background: var(--danger-strong);
+    }
+
     .hidden {
       display: none !important;
     }
@@ -393,6 +450,19 @@
 
       .study-topbar {
         grid-template-columns: auto 1fr;
+      }
+
+      .study-score {
+        text-align: right;
+      }
+
+      .study-feedback {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .deck-controls,
+      .deck-actions {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
       .card-row {
@@ -432,6 +502,23 @@
 
     <main>
       <section id="editor-view" class="view active" aria-label="Zadávací režim">
+        <div class="panel deck-panel">
+          <div class="section-heading">
+            <h2>Sady kartiček</h2>
+            <p id="active-deck-note" class="section-note">Aktivní sada</p>
+          </div>
+
+          <div class="deck-controls">
+            <select id="deck-select" class="deck-select" aria-label="Vyber sadu kartiček"></select>
+            <input id="deck-name-input" class="deck-input" type="text" maxlength="80" placeholder="Název nové sady">
+          </div>
+
+          <div class="deck-actions">
+            <button id="create-deck-button" class="secondary-button" type="button">Vytvořit sadu</button>
+            <button id="delete-deck-button" class="danger-button" type="button">Smazat sadu</button>
+          </div>
+        </div>
+
         <div class="panel">
           <form id="flashcard-form" class="flashcard-form">
             <label class="field">
@@ -475,7 +562,10 @@
       <section id="study-view" class="view" aria-label="Režim učení">
         <div class="study-topbar">
           <button id="back-to-edit-button" class="secondary-button" type="button">Zpět do editace</button>
-          <p id="study-progress" class="study-progress">Kartička 1 z 1</p>
+          <div>
+            <p id="study-progress" class="study-progress">Kartička 1 z 1</p>
+            <p id="study-score" class="study-score">Umím: 0 | Neumím: 0</p>
+          </div>
         </div>
 
         <div class="study-stage">
@@ -490,19 +580,27 @@
           <button id="next-card-button" class="nav-button" type="button" aria-label="Další kartička">›</button>
         </div>
 
+        <div class="study-feedback">
+          <button id="know-button" class="accent-button know-button" type="button">Umím</button>
+          <button id="dont-know-button" class="danger-button dont-know-button" type="button">Neumím</button>
+        </div>
+
         <p class="study-swipe-hint">Přejeď vlevo pro další kartičku, vpravo pro předchozí.</p>
       </section>
     </main>
   </div>
 
   <script>
-    const STORAGE_KEY = "flashcardsAppCards";
+    const STORAGE_KEY = "flashcardsAppState";
 
     const state = {
-      cards: [],
+      decks: [],
+      activeDeckId: null,
       editingId: null,
       currentIndex: 0,
       showingFront: true,
+      knownCount: 0,
+      unknownCount: 0,
       touchStartX: 0,
       touchEndX: 0
     };
@@ -510,6 +608,11 @@
     const elements = {
       editorView: document.getElementById("editor-view"),
       studyView: document.getElementById("study-view"),
+      deckSelect: document.getElementById("deck-select"),
+      deckNameInput: document.getElementById("deck-name-input"),
+      createDeckButton: document.getElementById("create-deck-button"),
+      deleteDeckButton: document.getElementById("delete-deck-button"),
+      activeDeckNote: document.getElementById("active-deck-note"),
       flashcardForm: document.getElementById("flashcard-form"),
       frontInput: document.getElementById("front-input"),
       backInput: document.getElementById("back-input"),
@@ -524,41 +627,83 @@
       cardList: document.getElementById("card-list"),
       backToEditButton: document.getElementById("back-to-edit-button"),
       studyProgress: document.getElementById("study-progress"),
+      studyScore: document.getElementById("study-score"),
       studyCard: document.getElementById("study-card"),
       studySideLabel: document.getElementById("study-side-label"),
       studyCardText: document.getElementById("study-card-text"),
       prevCardButton: document.getElementById("prev-card-button"),
-      nextCardButton: document.getElementById("next-card-button")
+      nextCardButton: document.getElementById("next-card-button"),
+      knowButton: document.getElementById("know-button"),
+      dontKnowButton: document.getElementById("dont-know-button")
     };
 
-    function loadCards() {
-      const savedCards = localStorage.getItem(STORAGE_KEY);
+    function createDeck(name = "Moje sada") {
+      const randomId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      return {
+        id: window.crypto && crypto.randomUUID ? crypto.randomUUID() : randomId,
+        name,
+        cards: []
+      };
+    }
 
-      if (!savedCards) {
-        state.cards = [];
+    function getActiveDeck() {
+      return state.decks.find((deck) => deck.id === state.activeDeckId) || null;
+    }
+
+    function getActiveCards() {
+      const activeDeck = getActiveDeck();
+      return activeDeck ? activeDeck.cards : [];
+    }
+
+    function loadCards() {
+      const savedState = localStorage.getItem(STORAGE_KEY);
+
+      if (!savedState) {
+        const defaultDeck = createDeck("Výchozí sada");
+        state.decks = [defaultDeck];
+        state.activeDeckId = defaultDeck.id;
         return;
       }
 
       try {
-        const parsedCards = JSON.parse(savedCards);
-        state.cards = Array.isArray(parsedCards) ? parsedCards : [];
+        const parsedState = JSON.parse(savedState);
+        const parsedDecks = Array.isArray(parsedState?.decks) ? parsedState.decks : [];
+
+        state.decks = parsedDecks
+          .filter((deck) => typeof deck?.name === "string" && Array.isArray(deck?.cards))
+          .map((deck) => ({
+            id: typeof deck.id === "string" && deck.id ? deck.id : createDeck(deck.name.trim() || "Moje sada").id,
+            name: deck.name.trim() || "Moje sada",
+            cards: deck.cards
+              .filter((card) => typeof card?.front === "string" && typeof card?.back === "string")
+              .map((card) => ({
+                id: typeof card.id === "string" && card.id ? card.id : createCard(card.front.trim(), card.back.trim()).id,
+                front: card.front.trim(),
+                back: card.back.trim()
+              }))
+          }));
+
+        if (state.decks.length === 0) {
+          state.decks = [createDeck("Výchozí sada")];
+        }
+
+        const savedActiveDeckId = typeof parsedState?.activeDeckId === "string" ? parsedState.activeDeckId : null;
+        state.activeDeckId = state.decks.some((deck) => deck.id === savedActiveDeckId)
+          ? savedActiveDeckId
+          : state.decks[0].id;
       } catch (error) {
-        console.error("Nepodařilo se načíst kartičky z localStorage:", error);
-        state.cards = [];
+        console.error("Nepodařilo se načíst data z localStorage:", error);
+        const defaultDeck = createDeck("Výchozí sada");
+        state.decks = [defaultDeck];
+        state.activeDeckId = defaultDeck.id;
       }
     }
 
     function saveCards() {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.cards));
-    }
-
-    function createCard(front, back) {
-      const randomId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      return {
-        id: window.crypto && crypto.randomUUID ? crypto.randomUUID() : randomId,
-        front,
-        back
-      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        decks: state.decks,
+        activeDeckId: state.activeDeckId
+      }));
     }
 
     function resetForm() {
@@ -566,6 +711,24 @@
       elements.flashcardForm.reset();
       elements.saveCardButton.textContent = "Přidat kartičku";
       elements.cancelEditButton.classList.add("hidden");
+    }
+
+    function renderDecks() {
+      const currentActiveDeckId = state.activeDeckId;
+      elements.deckSelect.innerHTML = "";
+
+      state.decks.forEach((deck) => {
+        const option = document.createElement("option");
+        option.value = deck.id;
+        option.textContent = `${deck.name} (${deck.cards.length})`;
+        elements.deckSelect.appendChild(option);
+      });
+
+      elements.deckSelect.value = currentActiveDeckId;
+
+      const activeDeck = getActiveDeck();
+      elements.activeDeckNote.textContent = activeDeck ? `Aktivní: ${activeDeck.name}` : "Aktivní sada";
+      elements.deleteDeckButton.disabled = state.decks.length <= 1;
     }
 
     function truncateText(text, maxLength = 90) {
@@ -586,11 +749,12 @@
     }
 
     function renderCardList() {
+      const activeCards = getActiveCards();
       elements.cardList.innerHTML = "";
-      elements.cardCount.textContent = `${state.cards.length} ${state.cards.length === 1 ? "kartička" : state.cards.length >= 2 && state.cards.length <= 4 ? "kartičky" : "kartiček"}`;
-      elements.emptyState.classList.toggle("hidden", state.cards.length > 0);
+      elements.cardCount.textContent = `${activeCards.length} ${activeCards.length === 1 ? "kartička" : activeCards.length >= 2 && activeCards.length <= 4 ? "kartičky" : "kartiček"}`;
+      elements.emptyState.classList.toggle("hidden", activeCards.length > 0);
 
-      state.cards.forEach((card) => {
+      activeCards.forEach((card) => {
         const row = document.createElement("article");
         row.className = "card-row";
 
@@ -634,7 +798,7 @@
     }
 
     function startEdit(cardId) {
-      const card = state.cards.find((item) => item.id === cardId);
+      const card = getActiveCards().find((item) => item.id === cardId);
 
       if (!card) {
         return;
@@ -650,8 +814,15 @@
     }
 
     function deleteCard(cardId) {
-      state.cards = state.cards.filter((card) => card.id !== cardId);
+      const activeDeck = getActiveDeck();
+
+      if (!activeDeck) {
+        return;
+      }
+
+      activeDeck.cards = activeDeck.cards.filter((card) => card.id !== cardId);
       saveCards();
+      renderDecks();
       renderCardList();
 
       if (state.editingId === cardId) {
@@ -664,23 +835,29 @@
 
       const front = elements.frontInput.value.trim();
       const back = elements.backInput.value.trim();
+      const activeDeck = getActiveDeck();
 
-      if (!front || !back) {
+      if (!front || !back || !activeDeck) {
         return;
       }
 
       if (state.editingId) {
-        const card = state.cards.find((item) => item.id === state.editingId);
+        const card = activeDeck.cards.find((item) => item.id === state.editingId);
 
         if (card) {
           card.front = front;
           card.back = back;
         }
       } else {
-        state.cards.unshift(createCard(front, back));
+        activeDeck.cards.unshift({
+          id: window.crypto && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          front,
+          back
+        });
       }
 
       saveCards();
+      renderDecks();
       renderCardList();
       resetForm();
     }
@@ -692,27 +869,31 @@
     }
 
     function updateStudyCard() {
-      const card = state.cards[state.currentIndex];
+      const activeCards = getActiveCards();
+      const card = activeCards[state.currentIndex];
 
       if (!card) {
         return;
       }
 
-      elements.studyProgress.textContent = `Kartička ${state.currentIndex + 1} z ${state.cards.length}`;
+      elements.studyProgress.textContent = `Kartička ${state.currentIndex + 1} z ${activeCards.length}`;
+      elements.studyScore.textContent = `Umím: ${state.knownCount} | Neumím: ${state.unknownCount}`;
       elements.studySideLabel.textContent = state.showingFront ? "Přední strana" : "Zadní strana";
       elements.studyCardText.textContent = state.showingFront ? card.front : card.back;
       elements.prevCardButton.disabled = state.currentIndex === 0;
-      elements.nextCardButton.disabled = state.currentIndex === state.cards.length - 1;
+      elements.nextCardButton.disabled = state.currentIndex === activeCards.length - 1;
     }
 
     function startStudyMode() {
-      if (state.cards.length === 0) {
-        window.alert("Nejdřív si vytvoř alespoň jednu kartičku.");
+      if (getActiveCards().length === 0) {
+        window.alert("Nejdřív přidej alespoň jednu kartičku.");
         return;
       }
 
       state.currentIndex = 0;
       state.showingFront = true;
+      state.knownCount = 0;
+      state.unknownCount = 0;
       updateStudyCard();
       showView("study");
     }
@@ -722,7 +903,7 @@
     }
 
     function flipStudyCard() {
-      if (state.cards.length === 0) {
+      if (getActiveCards().length === 0) {
         return;
       }
 
@@ -731,7 +912,9 @@
     }
 
     function goToCard(index) {
-      if (index < 0 || index >= state.cards.length) {
+      const activeCards = getActiveCards();
+
+      if (index < 0 || index >= activeCards.length) {
         return;
       }
 
@@ -748,15 +931,55 @@
       goToCard(state.currentIndex - 1);
     }
 
+    function markCardAsKnown(isKnown) {
+      const activeDeck = getActiveDeck();
+
+      if (!activeDeck || activeDeck.cards.length === 0) {
+        return;
+      }
+
+      const currentCard = activeDeck.cards[state.currentIndex];
+
+      if (!currentCard) {
+        return;
+      }
+
+      if (isKnown) {
+        state.knownCount += 1;
+        showNextCard();
+        return;
+      }
+
+      state.unknownCount += 1;
+
+      // Kartičku, kterou ještě neumíš, přesuneme na konec fronty.
+      const [cardToRepeat] = activeDeck.cards.splice(state.currentIndex, 1);
+      activeDeck.cards.push(cardToRepeat);
+      saveCards();
+
+      if (state.currentIndex >= activeDeck.cards.length) {
+        state.currentIndex = activeDeck.cards.length - 1;
+      }
+
+      state.showingFront = true;
+      updateStudyCard();
+    }
+
     function exportCards() {
-      const payload = JSON.stringify(state.cards, null, 2);
+      const activeDeck = getActiveDeck();
+
+      if (!activeDeck) {
+        return;
+      }
+
+      const payload = JSON.stringify(activeDeck.cards, null, 2);
       const blob = new Blob([payload], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       const dateStamp = new Date().toISOString().split("T")[0];
 
       link.href = url;
-      link.download = `flashcards-${dateStamp}.json`;
+      link.download = `${activeDeck.name.replace(/[^\w\-]+/g, "-").toLowerCase() || "flashcards"}-${dateStamp}.json`;
       link.click();
 
       URL.revokeObjectURL(url);
@@ -777,6 +1000,10 @@
         .filter((card) => card.front && card.back);
     }
 
+    function getCardSignature(card) {
+      return `${card.front.trim().toLowerCase()}::${card.back.trim().toLowerCase()}`;
+    }
+
     function importCards(event) {
       const file = event.target.files?.[0];
 
@@ -792,18 +1019,44 @@
           const importedCards = sanitizeImportedCards(parsed);
 
           if (importedCards.length === 0) {
-            window.alert("Vybraný JSON neobsahuje žádné použitelné kartičky.");
+            window.alert("V tomto JSONu nejsou žádné použitelné kartičky.");
             return;
           }
 
-          state.cards = importedCards;
+          const activeDeck = getActiveDeck();
+
+          if (!activeDeck) {
+            return;
+          }
+
+          const existingSignatures = new Set(activeDeck.cards.map((card) => getCardSignature(card)));
+          let skippedDuplicates = 0;
+          const uniqueImportedCards = importedCards.filter((card) => {
+            const signature = getCardSignature(card);
+
+            if (existingSignatures.has(signature)) {
+              skippedDuplicates += 1;
+              return false;
+            }
+
+            existingSignatures.add(signature);
+            return true;
+          });
+
+          if (uniqueImportedCards.length === 0) {
+            window.alert("Nic nového se neimportovalo. Všechny kartičky už máš uložené.");
+            return;
+          }
+
+          activeDeck.cards = [...uniqueImportedCards, ...activeDeck.cards];
           saveCards();
+          renderDecks();
           renderCardList();
           resetForm();
-          window.alert("Kartičky byly úspěšně importovány.");
+          window.alert(`Import hotový.\nPřidáno: ${uniqueImportedCards.length}\nPřeskočeno: ${skippedDuplicates}`);
         } catch (error) {
           console.error("Chyba při importu JSON:", error);
-          window.alert("Soubor se nepodařilo načíst jako platný JSON.");
+          window.alert("Soubor se nepodařilo načíst. Zkontroluj, že je to platný JSON.");
         } finally {
           event.target.value = "";
         }
@@ -813,21 +1066,87 @@
     }
 
     function clearAllCards() {
-      if (state.cards.length === 0) {
+      const activeDeck = getActiveDeck();
+
+      if (!activeDeck || activeDeck.cards.length === 0) {
         return;
       }
 
-      const confirmed = window.confirm("Opravdu chcete vymazat všechny kartičky?");
+      const confirmed = window.confirm("Opravdu chcete vymazat všechny kartičky v této sadě?");
 
       if (!confirmed) {
         return;
       }
 
-      state.cards = [];
+      activeDeck.cards = [];
       saveCards();
+      renderDecks();
       renderCardList();
       resetForm();
       exitStudyMode();
+    }
+
+    function createNewDeck() {
+      const deckName = elements.deckNameInput.value.trim();
+
+      if (!deckName) {
+        window.alert("Zadej název nové sady.");
+        return;
+      }
+
+      const duplicateDeck = state.decks.some((deck) => deck.name.trim().toLowerCase() === deckName.toLowerCase());
+
+      if (duplicateDeck) {
+        window.alert("Sada s tímto názvem už existuje.");
+        return;
+      }
+
+      const newDeck = createDeck(deckName);
+      state.decks.unshift(newDeck);
+      state.activeDeckId = newDeck.id;
+      elements.deckNameInput.value = "";
+      resetForm();
+      saveCards();
+      renderDecks();
+      renderCardList();
+    }
+
+    function changeActiveDeck() {
+      state.activeDeckId = elements.deckSelect.value;
+      state.currentIndex = 0;
+      state.showingFront = true;
+      state.knownCount = 0;
+      state.unknownCount = 0;
+      resetForm();
+      saveCards();
+      renderDecks();
+      renderCardList();
+      showView("editor");
+    }
+
+    function deleteActiveDeck() {
+      const activeDeck = getActiveDeck();
+
+      if (!activeDeck || state.decks.length <= 1) {
+        return;
+      }
+
+      const confirmed = window.confirm(`Opravdu chcete smazat sadu "${activeDeck.name}"?`);
+
+      if (!confirmed) {
+        return;
+      }
+
+      state.decks = state.decks.filter((deck) => deck.id !== activeDeck.id);
+      state.activeDeckId = state.decks[0].id;
+      state.currentIndex = 0;
+      state.knownCount = 0;
+      state.unknownCount = 0;
+      resetForm();
+      saveCards();
+      renderDecks();
+      renderCardList();
+      showView("editor");
     }
 
     function handleTouchStart(event) {
@@ -852,12 +1171,17 @@
 
     function bindEvents() {
       elements.flashcardForm.addEventListener("submit", handleFormSubmit);
+      elements.deckSelect.addEventListener("change", changeActiveDeck);
+      elements.createDeckButton.addEventListener("click", createNewDeck);
+      elements.deleteDeckButton.addEventListener("click", deleteActiveDeck);
       elements.cancelEditButton.addEventListener("click", resetForm);
       elements.studyButton.addEventListener("click", startStudyMode);
       elements.backToEditButton.addEventListener("click", exitStudyMode);
       elements.studyCard.addEventListener("click", flipStudyCard);
       elements.prevCardButton.addEventListener("click", showPreviousCard);
       elements.nextCardButton.addEventListener("click", showNextCard);
+      elements.knowButton.addEventListener("click", () => markCardAsKnown(true));
+      elements.dontKnowButton.addEventListener("click", () => markCardAsKnown(false));
       elements.exportButton.addEventListener("click", exportCards);
       elements.importInput.addEventListener("change", importCards);
       elements.clearAllButton.addEventListener("click", clearAllCards);
@@ -869,6 +1193,7 @@
 
     function init() {
       loadCards();
+      renderDecks();
       renderCardList();
       bindEvents();
     }
@@ -876,4 +1201,6 @@
     init();
   </script>
 </body>
+</html>
+
 </html>
