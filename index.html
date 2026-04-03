@@ -1,1 +1,87 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#f4efe8">
+  <title>Moje kartičky</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <p class="eyebrow">Flashcards pro iPhone</p>
+      <h1>Moje kartičky</h1>
+      <p class="subtitle">Vytvářej, upravuj a uč se pomocí jednoduchých kartiček i bez internetu.</p>
+    </header>
+
+    <main>
+      <section id="editor-view" class="view active" aria-label="Zadávací režim">
+        <div class="panel">
+          <form id="flashcard-form" class="flashcard-form">
+            <label class="field">
+              <span>Přední strana</span>
+              <textarea id="front-input" rows="4" maxlength="500" placeholder="Například otázka, pojem nebo slovo" required></textarea>
+            </label>
+
+            <label class="field">
+              <span>Zadní strana</span>
+              <textarea id="back-input" rows="5" maxlength="800" placeholder="Například odpověď, vysvětlení nebo překlad" required></textarea>
+            </label>
+
+            <div class="form-actions">
+              <button id="save-card-button" class="primary-button" type="submit">Přidat kartičku</button>
+              <button id="cancel-edit-button" class="secondary-button hidden" type="button">Zrušit úpravu</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="panel toolbar-panel">
+          <button id="study-button" class="accent-button" type="button">Učení</button>
+          <button id="export-button" class="secondary-button" type="button">Export JSON</button>
+          <label class="secondary-button import-button">
+            Import JSON
+            <input id="import-input" type="file" accept="application/json,.json">
+          </label>
+          <button id="clear-all-button" class="danger-button" type="button">Vymazat vše</button>
+        </div>
+
+        <section class="panel card-list-panel">
+          <div class="section-heading">
+            <h2>Uložené kartičky</h2>
+            <p id="card-count" class="section-note">0 kartiček</p>
+          </div>
+
+          <p id="empty-state" class="empty-state">Zatím nemáte žádné kartičky.</p>
+          <div id="card-list" class="card-list" aria-live="polite"></div>
+        </section>
+      </section>
+
+      <section id="study-view" class="view" aria-label="Režim učení">
+        <div class="study-topbar">
+          <button id="back-to-edit-button" class="secondary-button" type="button">Zpět do editace</button>
+          <p id="study-progress" class="study-progress">Kartička 1 z 1</p>
+        </div>
+
+        <div class="study-stage">
+          <button id="prev-card-button" class="nav-button" type="button" aria-label="Předchozí kartička">‹</button>
+
+          <button id="study-card" class="study-card" type="button" aria-live="polite">
+            <span id="study-side-label" class="study-side-label">Přední strana</span>
+            <span id="study-card-text" class="study-card-text"></span>
+            <span class="study-hint">Klepni pro otočení</span>
+          </button>
+
+          <button id="next-card-button" class="nav-button" type="button" aria-label="Další kartička">›</button>
+        </div>
+
+        <p class="study-swipe-hint">Přejeď vlevo pro další kartičku, vpravo pro předchozí.</p>
+      </section>
+    </main>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
 
